@@ -4,7 +4,7 @@ import time
 # use local loop back address by default
 #CHAT_IP = '127.0.0.1'
 # CHAT_IP = socket.gethostbyname(socket.gethostname())
-CHAT_IP = ''#socket.gethostbyname(socket.gethostname())
+CHAT_IP = socket.gethostname()
 
 CHAT_PORT = 1112
 SERVER = (CHAT_IP, CHAT_PORT)
@@ -13,6 +13,7 @@ menu = "\n++++ Choose one of the following commands\n \
         time: calendar time in the system\n \
         who: to find out who else are there\n \
         c _peer_: to connect to the _peer_ and chat\n \
+        g _peer_: to connect to the _peer_ and play a game\n \
         ? _term_: to search your chat logs where _term_ appears\n \
         p _#_: to get number <#> sonnet\n \
         q: to leave the chat system\n\n"
@@ -21,7 +22,11 @@ S_OFFLINE   = 0
 S_CONNECTED = 1
 S_LOGGEDIN  = 2
 S_CHATTING  = 3
-S_GAMING = 4
+S_GAMING    = 4
+
+GAME      = "A"
+IN_GAME  = "B"
+
 SIZE_SPEC = 5
 
 CHAT_WAIT = 0.2
@@ -36,8 +41,6 @@ def print_state(state):
         print('Logged in')
     elif state == S_CHATTING:
         print('Chatting')
-    elif state == S_GAMING:
-        print('Gaming')
     else:
         print('Error: wrong state')
 
@@ -46,9 +49,9 @@ def mysend(s, msg):
     msg = ('0' * SIZE_SPEC + str(len(msg)))[-SIZE_SPEC:] + str(msg)
     msg = msg.encode()
     total_sent = 0
-    while total_sent < len(msg) :
+    while total_sent < len(msg):
         sent = s.send(msg[total_sent:])
-        if sent==0:
+        if sent == 0:
             print('server disconnected')
             break
         total_sent += sent

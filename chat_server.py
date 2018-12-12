@@ -12,6 +12,8 @@ import string
 import indexer
 import json
 import pickle as pkl
+
+from battle_ship import BattleShip
 from chat_utils import *
 import chat_group as grp
 
@@ -95,6 +97,7 @@ class Server:
 #==============================================================================
 # handle connect request
 #==============================================================================
+            print(msg)
             msg = json.loads(msg)
             if msg["action"] == "connect":
                 to_name = msg["target"]
@@ -106,32 +109,103 @@ class Server:
                     to_sock = self.logged_name2sock[to_name]
                     self.group.connect(from_name, to_name)
                     the_guys = self.group.list_me(from_name)
-                    msg = json.dumps({"action":"connect", "status":"success"})
+                    msg = json.dumps({
+                        "action": "connect",
+                        "status": "success"
+                    })
                     for g in the_guys[1:]:
                         to_sock = self.logged_name2sock[g]
-                        mysend(to_sock, json.dumps({"action":"connect", "status":"request", "from":from_name}))
+                        mysend(to_sock, json.dumps({
+                            "action": "connect",
+                            "status": "request",
+                            "from": from_name}))
                 else:
-                    msg = json.dumps({"action":"connect", "status":"no-user"})
+                    msg = json.dumps({"action": "connect", "status": "no-user"})
                 mysend(from_sock, msg)
-#==============================================================================
+# ==============================================================================
 # handle game request
-#==============================================================================
-            msg = json.loads(msg)
-            if msg["action"] == "game":
+# ==============================================================================
+            elif msg["action"] == GAME:
                 to_name = msg["target"]
                 from_name = self.logged_sock2name[from_sock]
+                
                 if to_name == from_name:
-                    msg = json.dumps({"action":"game", "status":"self"})
+                    msg = json.dumps({"action": GAME, "status": "self"})
+                    
                 # connect to the peer
-                else: 
-                    print('Game request from', to_name)
-                    accept = input('Accept or Reject? (Y or N): ').lower()
-                    if accept == 'y':
-                        msg = json.dumps({"action":"game", "status":"success"})
-                        #CALL THE BATTLESHIP GAME
-                    else:
-                        msg = json.dumps({"action":"game", "status":"busy"})
+                elif self.group.is_member(to_name) and len(self.group.list_me(to_name)) == 1:
+                    to_sock = self.logged_name2sock[to_name]
+                    self.group.connect(from_name, to_name)
+                    print(from_name, to_name)
+                    self.game = BattleShip(from_name, to_name)
+                    players = list(map(lambda player: player.name, self.game.players))
+                    from_id = players.index(from_name)
+                    to_id = players.index(to_name)
+            
+                    msg = json.dumps({"action": GAME,
+                                      "mess": self.game.get_context_mess_status(from_id),
+                                      "status": "success"
+                                      })
+
+                    mysend(to_sock, json.dumps({"action": GAME,
+                                                "status": "request",
+                                                "mess": self.game.get_context_mess_status(to_id),
+                                                "from": from_name
+                                                }))
+
+                else:
+                    msg = json.dumps({"action": GAME, "status": "no-user"})
                 mysend(from_sock, msg)
+# ==============================================================================
+# handle game exchange: 
+# ==============================================================================
+            elif msg["action"] == IN_GAME:
+
+                from_name = self.logged_sock2name[from_sock]
+                to_name = self.group.list_me(from_name)[1]
+                to_sock = self.logged_name2sock[to_name]
+                players = list(map(lambda player: player.name, self.game.players))
+                from_id = players.index(from_name)
+                to_id = players.index(to_name)
+                
+                if (self.game.whose_turn == from_id):
+                    is_success, mess = self.game.shooting(msg['message'])
+                    msg = json.dumps({
+                        "action": GAME,
+                        "mess": mess,
+                        "status": "success"
+                    })
+                    if is_success:
+                        mysend(to_sock, json.dumps({
+                                "action": GAME,
+                                "status": "success",
+                                "mess": self.game.get_context_mess_status(to_id),
+                                "from": from_name}))
+                            
+                    mysend(from_sock, msg)
+                elif (self.game.whose_turn == to_id):
+                    msg = json.dumps({
+                        "action": GAME,
+                        "mess": "It's not your turn yet. Please wait for " + to_name + "'s turn",
+                        "status": "success"
+                    })
+                    mysend(from_sock, msg)
+
+                if self.game.check_winning(from_id) == 1:
+                   msg = json.dumps({
+                        "action": GAME,
+                        "mess": 'YOU WON! Hope you enjoyed the game. Type "quit" to exit the game\n',
+                        "status": "success"
+                        })
+
+                   mysend(to_sock, json.dumps({
+                                "action": GAME,
+                                "status": "success",
+                                "mess": from_name.upper() + ' WON! Hope you enjoyed the game. Type "quit" to exit the game\n',
+                                "from": from_name}))
+                   mysend(from_sock, msg)
+                   
+                        
 #==============================================================================
 # handle messeage exchange: one peer for now. will need multicast later
 #==============================================================================
@@ -144,7 +218,11 @@ class Server:
                 for g in the_guys[1:]:
                     to_sock = self.logged_name2sock[g]
                     self.indices[g].add_msg_and_index(said2)
-                    mysend(to_sock, json.dumps({"action":"exchange", "from":msg["from"], "message":msg["message"]}))
+                    mysend(to_sock, json.dumps({
+                        "action": "exchange",
+                        "from": msg["from"],
+                        "message": msg["message"]
+                    }))
 #==============================================================================
 #                 listing available peers
 #==============================================================================
@@ -168,7 +246,7 @@ class Server:
 #==============================================================================
             elif msg["action"] == "time":
                 ctime = time.strftime('%d.%m.%y,%H:%M', time.localtime())
-                mysend(from_sock, json.dumps({"action":"time", "results":ctime}))
+                mysend(from_sock, json.dumps({"action": "time", "results": ctime}))
 #==============================================================================
 #                 search
 #==============================================================================
@@ -204,9 +282,9 @@ class Server:
 # main loop, loops *forever*
 #==============================================================================
     def run(self):
-        print ('starting server...')
-        while(1):
-           read,write,error=select.select(self.all_sockets,[],[])
+        print('starting server...')
+        while 1:
+           read, write, error = select.select(self.all_sockets, [], [])
            print('checking logged clients..')
            for logc in list(self.logged_name2sock.values()):
                if logc in read:

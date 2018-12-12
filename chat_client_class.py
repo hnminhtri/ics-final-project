@@ -5,9 +5,8 @@ import sys
 import json
 from chat_utils import *
 import client_state_machine as csm
-import threading
 
-import battle_ship
+import threading
 
 class Client:
     def __init__(self, args):
@@ -19,13 +18,6 @@ class Client:
         self.peer_msg = ''
         self.args = args
 
-    #read shooting position
-    def shooting(self):
-        print(self.get_name(), "It is now your turn!")
-        row, column = input('Please enter where you want to shoot (e.g. A 1): ').split()
-        row = convert_letter_coordinate(row)
-        return row, int(column)
-    
     def quit(self):
         self.socket.shutdown(socket.SHUT_RDWR)
         self.socket.close()
@@ -36,6 +28,7 @@ class Client:
     def init_chat(self):
         self.socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM )
         svr = SERVER if self.args.d == None else (self.args.d, CHAT_PORT)
+        print(svr)
         self.socket.connect(svr)
         self.sm = csm.ClientSM(self.socket)
         reading_thread = threading.Thread(target=self.read_input)
